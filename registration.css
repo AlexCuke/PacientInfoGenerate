@@ -1,0 +1,11 @@
+.registration-page { width: auto; }
+.registration-page main { max-width: 820px; margin: auto; }
+.registration-page h1 { margin-bottom: 20px; }
+.registration-page fieldset { margin: 0 0 16px; min-width: 0; padding: 14px; border: 1px solid #d5dfeb; border-radius: 8px; }
+.registration-page legend { font-weight: 600; }
+.registration-page details { padding: 8px 0; }
+.registration-page summary { cursor: pointer; }
+.registration-page pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 580px) {
+  .registration-page .controls { grid-template-columns: 1fr; gap: 0; }
+}

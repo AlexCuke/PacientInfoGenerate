@@ -2,6 +2,7 @@
 const api = PatientGenerator;
 const $ = id => document.getElementById(id);
 let patient;
+let sessionWrite;
 function status(message) { $('status').textContent = message; }
 async function copy(value) {
   try { await navigator.clipboard.writeText(value); status('Скопировано.'); }
@@ -17,12 +18,13 @@ function render() {
     button.addEventListener('click', () => copy(formattedValue));
     row.append(title,value,button);$('fields').append(row);
   }
+  $('openRegistration').disabled = false;
 }
 function generate() {
   try {
     patient = api.generate({mode:$('mode').value,sex:$('sex').value,age:$('age').value === '' ? undefined : Number($('age').value)});
     render();status('');
-    chrome.storage.session.set({currentPatient:patient}).catch(() => {});
+    sessionWrite = chrome.storage.session.set({currentPatient:patient}).catch(error => error);
   } catch (error) {status(error.message);}
 }
 function updateControls() {
@@ -33,6 +35,15 @@ function updateControls() {
 $('mode').addEventListener('change', updateControls);
 $('generate').addEventListener('click',generate);
 $('copyAll').addEventListener('click',() => copy(api.text(patient)));
+$('openRegistration').addEventListener('click', async () => {
+  try {
+    const storageError = await sessionWrite;
+    if (storageError) throw storageError;
+    await chrome.tabs.create({url: chrome.runtime.getURL('registration.html')});
+  } catch (error) {
+    status('Не удалось открыть регистрацию. ' + error.message);
+  }
+});
 async function init() {
   try {
     const session = await chrome.storage.session.get('currentPatient');

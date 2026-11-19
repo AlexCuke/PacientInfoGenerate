@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Облтех — тестовый пациент",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "minimum_chrome_version": "112",
-  "description": "Локальная генерация и копирование тестовых данных пациента.",
+  "description": "Генерация тестовых пациентов и регистрация стационарного случая.",
   "permissions": ["storage"],
+  "optional_host_permissions": [
+    "http://registration.dev.m99.dzm/*",
+    "http://registration.test.m99.dzm/*",
+    "http://registration-tpak.m15.dzm/*"
+  ],
   "icons": {
     "16": "icons/patient-16.png",
     "32": "icons/patient-32.png",
