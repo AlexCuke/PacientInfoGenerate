@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Тестовый пациент</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+<header><span class="brand">ОБЛТЕХ <span>/ DEV TOOLS</span></span></header>
+<main><h1>Тестовый пациент</h1><p class="intro">Новая карточка для проверки регистрации</p>
+<div class="controls"><label>Пол<select id="sex"><option value="random">Случайный</option><option value="male">Мужской</option><option value="female">Женский</option></select></label><label>Полных лет<input id="age" type="number" min="14" max="100" placeholder="Случайно: 18–80"></label></div>
+<button id="generate" class="primary">Сгенерировать пациента</button>
+<div class="verification"><label><input type="checkbox" disabled> Сверенный</label><small>Нет подключения к ЕРЗЛ и ЕРП. Проверяются только контрольные цифры СНИЛС и ОМС.</small></div>
+<div class="card-heading"><h2>Данные пациента</h2><button id="copyAll" class="text-button">Копировать всё</button></div>
+<div id="fields"></div>
+<p id="status" role="status" aria-live="polite"></p>
+</main><script src="core.js"></script><script src="popup.js"></script></body></html>

@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Облтех — тестовый пациент",
+  "version": "0.1.2",
+  "minimum_chrome_version": "112",
+  "description": "Локальная генерация и копирование тестовых данных пациента.",
+  "permissions": ["storage"],
+  "icons": {
+    "16": "icons/patient-16.png",
+    "32": "icons/patient-32.png",
+    "48": "icons/patient-48.png",
+    "128": "icons/patient-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Тестовый пациент",
+    "default_icon": {
+      "16": "icons/patient-16.png",
+      "32": "icons/patient-32.png"
+    }
+  }
+}
