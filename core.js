@@ -3,7 +3,8 @@
   const fields = {
     documentType: 'Документ, удостоверяющий личность', series: 'Серия', number: 'Номер',
     issuer: 'Кем выдан', issueDate: 'Когда выдан', sex: 'Пол', lastName: 'Фамилия',
-    firstName: 'Имя', middleName: 'Отчество', birthDate: 'Дата рождения', snils: 'СНИЛС', oms: 'Полис ОМС'
+    firstName: 'Имя', middleName: 'Отчество', birthDate: 'Дата рождения', snils: 'СНИЛС', oms: 'Полис ОМС',
+    phone: 'Телефон'
   };
   const male = ['Александр','Дмитрий','Максим','Андрей','Алексей','Сергей','Иван','Михаил','Денис','Павел'];
   const female = ['Анна','Мария','Елена','Ольга','Наталья','Ирина','Татьяна','Светлана','Екатерина','Дарья'];
@@ -18,6 +19,9 @@
     return min + value[0] % range;
   }
   const pick = values => values[integer(0, values.length - 1)];
+  const digits = count => Array.from({length: count}, () => integer(0, 9)).join('');
+  const nonzeroDigits = count => String(integer(1, 9)) + digits(count - 1);
+  const generatePhone = () => '+79' + digits(9);
   function snilsCheck(base) {
     if (!/^\d{9}$/.test(base)) throw new Error('Основа СНИЛС должна содержать 9 цифр');
     const remainder = [...base].reduce((sum, digit, i) => sum + Number(digit) * (9 - i), 0) % 101;
@@ -33,6 +37,30 @@
     const sum = [...even + String(Number(odd) * 2)].reduce((s, d) => s + Number(d), 0);
     return String((10 - sum % 10) % 10);
   }
+  function luhnCheck(base) {
+    const sum = [...base].reverse().reduce((total, digit, index) => {
+      const value = Number(digit) * (index % 2 === 0 ? 2 : 1);
+      return total + (value > 9 ? value - 9 : value);
+    }, 0);
+    return String((10 - sum % 10) % 10);
+  }
+  function generateElasticPatient() {
+    const snilsBase = nonzeroDigits(9);
+    const omsBase = nonzeroDigits(15);
+    return {
+      lastName: pick(['Иванов', 'Петров', 'Сидоров', 'Смирнов', 'Кузнецов', 'Попов', 'Соколов', 'Морозов']),
+      firstName: pick(['Александр', 'Алексей', 'Дмитрий', 'Иван', 'Михаил', 'Николай', 'Сергей', 'Андрей']),
+      middleName: pick(['Александрович', 'Алексеевич', 'Дмитриевич', 'Иванович', 'Михайлович', 'Николаевич', 'Сергеевич', 'Андреевич']),
+      sex: 'male',
+      birthDate: '1988-03-12',
+      snils: snilsBase + snilsCheck(snilsBase),
+      oms: omsBase + luhnCheck(omsBase),
+      series: nonzeroDigits(4),
+      number: nonzeroDigits(6),
+      phone: generatePhone(),
+      metadata: {synthetic: true, registryVerified: false, mode: 'elastic'}
+    };
+  }
   const iso = date => date.toISOString().slice(0, 10);
   const dateAt = (year, month, day) => new Date(Date.UTC(year, month, day));
   function anniversary(date, years) {
@@ -41,6 +69,7 @@
     return result;
   }
   function generate(options = {}) {
+    if (options.mode === 'elastic') return generateElasticPatient();
     const todayISO = options.today || new Intl.DateTimeFormat('sv-SE', {timeZone: 'Europe/Moscow'}).format(new Date());
     const today = new Date(todayISO + 'T00:00:00Z');
     if (!Number.isFinite(today.getTime())) throw new Error('Некорректная текущая дата');
@@ -59,7 +88,7 @@
     let base;
     do { base = String(integer(1001999, 999999999)).padStart(9,'0'); } while (/(\d)\1\1/.test(base));
     const snils = base + snilsCheck(base);
-    const omsBase = String(integer(1, 9)) + Array.from({length:14}, () => integer(0, 9)).join('');
+    const omsBase = nonzeroDigits(15);
     const isFemale = sex === 'female';
     return {
       documentType:'Паспорт гражданина Российской Федерации',
@@ -67,7 +96,7 @@
       issuer:issueYear >= 2017 ? 'ГУ МВД России по г. Москве' : issueYear >= 2005 ? 'УФМС России по г. Москве' : 'ОВД района Тверской г. Москвы',
       issueDate:iso(issue), sex, lastName:pick(surnames) + (isFemale ? 'а' : ''),
       firstName:pick(isFemale ? female : male), middleName:pick(fathers)[isFemale ? 1 : 0],
-      birthDate:iso(birth), snils, oms:omsBase + omsCheck(omsBase),
+      birthDate:iso(birth), snils, oms:omsBase + omsCheck(omsBase), phone:generatePhone(),
       metadata:{synthetic:true, registryVerified:false, age, generatedOn:todayISO}
     };
   }
@@ -77,8 +106,13 @@
     if (key === 'snils') return value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1-$2-$3 $4');
     return value;
   }
-  function text(patient) { return Object.keys(fields).map(k => fields[k] + ': ' + display(k, patient[k])).join('\n'); }
-  const api = {fields, generate, snilsCheck, omsCheck, display, text};
+  function entries(patient) {
+    return Object.entries(fields)
+      .filter(([key]) => patient[key] != null)
+      .map(([key, label]) => [label, display(key, patient[key])]);
+  }
+  function text(patient) { return entries(patient).map(([label, value]) => label + ': ' + value).join('\n'); }
+  const api = {fields, generate, snilsCheck, omsCheck, display, entries, text};
   if (typeof module !== 'undefined') module.exports = api;
   root.PatientGenerator = api;
 })(globalThis);

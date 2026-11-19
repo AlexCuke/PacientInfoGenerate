@@ -1,6 +1,6 @@
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {generate,snilsCheck,omsCheck,display} = require('../core.js');
+const {generate,snilsCheck,omsCheck,display,text} = require('../core.js');
 test('СНИЛС: известный пример и граничные суммы', () => {
   assert.equal(snilsCheck('112233445'),'95');
   assert.equal(snilsCheck('000000000'),'00');
@@ -24,6 +24,8 @@ test('2000 карточек: форматы, контрольные цифры, 
     const p=generate({sex,age,today:now});
     assert.equal(p.sex,sex);assert.equal(p.metadata.registryVerified,false);
     assert.match(p.snils,/^\d{11}$/);assert.match(p.oms,/^[1-9]\d{15}$/);
+    assert.equal(p.oms.at(-1), omsCheck(p.oms.slice(0, -1)));
+    assert.match(p.phone,/^\+79\d{9}$/);
     assert.match(p.series,/^45\d{2}$/);assert.match(p.number,/^\d{6}$/);
     assert.ok(!/(\d)\1\1/.test(p.snils.slice(0,9)));
     const sum=[...p.snils.slice(0,9)].reduce((s,d,j)=>s+Number(d)*(9-j),0);
@@ -38,6 +40,33 @@ test('2000 карточек: форматы, контрольные цифры, 
     seen.add(p.snils);
   }
   assert.ok(seen.size>1990);
+});
+test('elastic_new: форматы реквизитов, контрольные суммы и копирование', () => {
+  for (let i = 0; i < 100; i++) {
+    const patient = generate({mode: 'elastic', sex: 'female', age: 20});
+    assert.equal(patient.sex, 'male');
+    assert.equal(patient.birthDate, '1988-03-12');
+    assert.match(patient.middleName, /ич$/);
+    assert.match(patient.series, /^[1-9]\d{3}$/);
+    assert.match(patient.number, /^[1-9]\d{5}$/);
+    assert.match(patient.phone, /^\+79\d{9}$/);
+    assert.match(patient.snils, /^[1-9]\d{10}$/);
+    assert.equal(patient.snils.slice(-2), snilsCheck(patient.snils.slice(0, 9)));
+    assert.match(patient.oms, /^[1-9]\d{15}$/);
+    const luhnSum = [...patient.oms].reduce((sum, digit, index) => {
+      const value = Number(digit);
+      return sum + (index % 2 === 0 ? (value * 2 > 9 ? value * 2 - 9 : value * 2) : value);
+    }, 0);
+    assert.equal(luhnSum % 10, 0);
+    assert.ok(text(patient).includes('Дата рождения: 12.03.1988'));
+    assert.ok(text(patient).includes('Телефон: ' + patient.phone));
+    assert.doesNotMatch(text(patient), /Кем выдан|Когда выдан|undefined/);
+  }
+});
+test('карточка предыдущей версии копируется без поля телефона', () => {
+  const patient = generate();
+  delete patient.phone;
+  assert.doesNotMatch(text(patient), /Телефон|undefined/);
 });
 test('проверка возраста и форматирование',()=>{
   for(const age of [13,101,14.5,NaN]) assert.throws(()=>generate({age}));

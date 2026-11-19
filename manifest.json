@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Облтех — тестовый пациент",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "minimum_chrome_version": "112",
   "description": "Локальная генерация и копирование тестовых данных пациента.",
   "permissions": ["storage"],
