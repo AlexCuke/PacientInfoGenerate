@@ -74,7 +74,7 @@
     let id = processId.trim();
     async function run(method, path, payload) {
       const operation = method + ' ' + path.split('?')[0];
-      onStep({operation, id});
+      await onStep({operation, id});
       let result;
       try {
         result = await request(baseUrl, method, path, payload);
@@ -86,7 +86,7 @@
         const nextId = state?.id || state?.process_id || state?.processId;
         if (nextId) id = String(nextId);
       }
-      onStep({operation, id, result});
+      await onStep({operation, id, result});
       return result;
     }
 

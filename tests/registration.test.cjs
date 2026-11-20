@@ -9,7 +9,7 @@ const details = Object.fromEntries(Object.entries(caseFields).map(([key, [, valu
 
 test('адреса контуров согласованы с разрешениями расширения', () => {
   assert.deepEqual(Object.values(environments).map(url => url + '/*').sort(),
-    [...manifest.optional_host_permissions].sort());
+    [...manifest.host_permissions].sort());
 });
 
 test('регистрация передаёт состояние процесса между этапами', async t => {
