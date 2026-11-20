@@ -21,17 +21,11 @@ function render() {
 }
 function generate() {
   try {
-    patient = api.generate({mode:$('mode').value,sex:$('sex').value,age:$('age').value === '' ? undefined : Number($('age').value)});
+    patient = api.generate({sex:$('sex').value,age:$('age').value === '' ? undefined : Number($('age').value)});
     render();status('');
     chrome.storage.session.set({currentPatient:patient}).catch(() => {});
   } catch (error) {status(error.message);}
 }
-function updateControls() {
-  const elastic = $('mode').value === 'elastic';
-  $('sex').disabled = elastic;
-  $('age').disabled = elastic;
-}
-$('mode').addEventListener('change', updateControls);
 $('generate').addEventListener('click',generate);
 $('copyAll').addEventListener('click',() => copy(api.text(patient)));
 async function init() {
@@ -39,8 +33,6 @@ async function init() {
     const session = await chrome.storage.session.get('currentPatient');
     if (session.currentPatient) {
       patient = session.currentPatient;
-      $('mode').value = patient.metadata?.mode === 'elastic' ? 'elastic' : 'standard';
-      updateControls();
       render();
     } else generate();
   } catch (error) {status('Настройки недоступны: ' + error.message);}
