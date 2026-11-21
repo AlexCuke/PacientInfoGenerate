@@ -8,8 +8,12 @@ const environment = 'M99 DEV';
 const details = Object.fromEntries(Object.entries(caseFields).map(([key, [, value]]) => [key, value]));
 
 test('адреса контуров согласованы с разрешениями расширения', () => {
-  assert.deepEqual(Object.values(environments).map(url => url + '/*').sort(),
-    [...manifest.host_permissions].sort());
+  const registrationPermissions = manifest.host_permissions.filter(url => url.startsWith('http://registration'));
+  assert.deepEqual(Object.values(environments).map(url => url + '/*').sort(), registrationPermissions.sort());
+  assert.ok(manifest.host_permissions.includes('https://reg.dev.m99.dzm/*'));
+  assert.ok(manifest.permissions.includes('activeTab'));
+  assert.ok(manifest.permissions.includes('scripting'));
+  assert.ok(manifest.permissions.includes('tabs'));
 });
 
 test('регистрация передаёт состояние процесса между этапами', async t => {

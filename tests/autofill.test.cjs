@@ -36,6 +36,51 @@ test('12 полей со скриншота: подписи, даты, пол, �
   assert.equal(controls[5].value,p.lastName);assert.match(controls[4].value,/^\d{2}\.\d{2}\.\d{4}$/);
   assert.ok(controls[5].events.includes('input'));assert.ok(controls[5].events.includes('change'));
 });
+test('находит Angular-поля по подписи внутри lu-input-wrapper',async()=>{
+  const labels=['Серия','Номер','Кем выдан','Фамилия','Имя','Отчество','СНИЛС','Полис ОМС','Муж','Жен'];
+  const controls=labels.map((label,index)=>{
+    const input=new Input('',index>7?'checkbox':'text');
+    input.parentElement={textContent:label};
+    input.closest=selector=>selector.includes('lu-input-wrapper')?input.parentElement:null;
+    return input;
+  });
+  install(controls);const p=generate({sex:'male'});const result=await fillPatientForm(p);
+  assert.deepEqual(result.errors,[]);
+  assert.equal(controls[0].value,p.series);assert.equal(controls[1].value,p.number);
+  assert.equal(controls[2].value,p.issuer);assert.equal(controls[3].value,p.lastName);
+  assert.equal(controls[4].value,p.firstName);assert.equal(controls[5].value,p.middleName);
+  assert.equal(controls[6].value.replace(/\D/g,''),p.snils);assert.equal(controls[7].value,p.oms);
+  assert.equal(controls[8].checked,true);assert.equal(controls[9].checked,false);
+});
+test('находит и форматирует безымянные поля по маскам luMask',async()=>{
+  const specs=[['99 99','tel'],['999999','tel'],['999-999-999 99','tel'],['9999 9999 9999 9999','tel']];
+  const controls=specs.map(([mask,type])=>{const input=new Input('',type);input.attrs.lumask=mask;return input;});
+  install(controls);const p=generate();const result=await fillPatientForm(p);
+  assert.deepEqual(result.errors,[]);
+  assert.equal(controls[0].value,p.series.replace(/(\d{2})(\d{2})/,'$1 $2'));
+  assert.equal(controls[1].value,p.number);
+  assert.equal(controls[2].value,p.snils.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1-$2-$3 $4'));
+  assert.equal(controls[3].value,p.oms.replace(/(\d{4})(\d{4})(\d{4})(\d{4})/,'$1 $2 $3 $4'));
+});
+test('вводит значения luMask через Chromium insertText',async()=>{
+  const input=new Input('','tel');input.attrs.lumask='999-999-999 99';
+  let focused;input.focus=()=>{focused=input;};input.select=()=>{};install([input]);
+  document.execCommand=(command,showUi,text)=>{assert.equal(command,'insertText');focused.value=text;return true;};
+  const p=generate();const result=await fillPatientForm(p);
+  assert.deepEqual(result.errors,[]);assert.equal(input.value,p.snils);
+});
+test('не принимает видимую маску за заполненное значение',async()=>{
+  const input=new Input('','tel');input.attrs.lumask='999-999-999 99';input.value='999-999-999 99';
+  input.classList={contains:name=>name==='hide-mask'};
+  install([input]);const p=generate();const result=await fillPatientForm(p);
+  assert.ok(result.filled.includes('snils'));assert.equal(input.value.replace(/\D/g,''),p.snils);
+});
+test('различает две radio с общим именем gender по подписям',async()=>{
+  const male=new Input('Муж','radio'),female=new Input('Жен','radio');
+  male.name='gender';female.name='gender';install([male,female]);
+  const result=await fillPatientForm(generate({sex:'female'}));
+  assert.ok(result.filled.includes('sex'));assert.equal(male.checked,false);assert.equal(female.checked,true);
+});
 test('не изменяет заполненные, неоднозначные, скрытые и readonly поля',async()=>{
   const first=new Input('Фамилия');first.value='Существующая';const read=new Input('СНИЛС');read.readOnly=true;
   const hidden=new Input('Полис ОМС');hidden.getClientRects=()=>[];

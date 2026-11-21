@@ -5,6 +5,21 @@
 <main><h1>Тестовый пациент</h1><p class="intro">Новая карточка для проверки регистрации</p>
 <div class="controls"><label>Пол<select id="sex"><option value="random">Случайный</option><option value="male">Мужской</option><option value="female">Женский</option></select></label><label>Полных лет<input id="age" type="number" min="14" max="100" placeholder="Случайно: 18–80"></label></div>
 <button id="generate" class="primary">Сгенерировать пациента</button>
+<section class="samotek-panel" aria-labelledby="samotekTitle">
+  <h2 id="samotekTitle">M99 DEV · Самотёк</h2>
+  <p>Рабочий профиль: <strong>Тимофеева Е.А. · 1 С8 ПО · Старшая медицинская сестра</strong></p>
+  <button id="openAndAutofillSamotek" type="button" class="primary">Открыть и автозаполнить</button>
+  <button id="openSamotek" type="button">Открыть для ручного заполнения</button>
+  <button id="autofillSamotek" type="button">Автозаполнить открытую форму</button>
+  <label class="replace-option"><input id="replaceSamotek" type="checkbox"> Заменить уже заполненные поля</label>
+  <small>Вход выполняется через Keycloak в открытой вкладке. Расширение не сохраняет пароль или токен.</small>
+</section>
+<section class="samotek-panel" aria-labelledby="triageTitle">
+  <h2 id="triageTitle">Триажный осмотр</h2>
+  <p>Пациент выбирается в списке по ФИО и номеру ОМС. Значения генерируются в допустимых диапазонах.</p>
+  <button id="generateTriage" type="button" class="primary">Сгенерировать триаж</button>
+  <small>Форма заполняется автоматически, но кнопка «Распределить пациента» не нажимается.</small>
+</section>
 <details id="hospitalization">
 <summary>Госпитализация</summary>
 <p id="hospitalizationPatient"></p>
@@ -48,4 +63,4 @@
 <div class="card-heading"><h2>Данные пациента</h2><button id="copyAll" class="text-button">Копировать всё</button></div>
 <div id="fields"></div>
 <p id="status" role="status" aria-live="polite"></p>
-</main><script src="core.js"></script><script src="registration.js"></script><script src="hospitalization.js"></script><script src="popup.js"></script></body></html>
+</main><script src="core.js"></script><script src="registration.js"></script><script src="hospitalization.js"></script><script src="autofill.js"></script><script src="popup.js"></script></body></html>
