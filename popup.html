@@ -3,8 +3,33 @@
 <body>
 <header><span class="brand">ОБЛТЕХ <span>/ DEV TOOLS</span></span></header>
 <main><h1>Тестовый пациент</h1><p class="intro">Новая карточка для проверки регистрации</p>
+<section class="workflow-launch" aria-labelledby="workflowLaunchTitle">
+  <h2 id="workflowLaunchTitle">Полный автоматический сценарий</h2>
+  <button id="runCompleteWorkflow" type="button" class="primary workflow-primary">Сгенерировать пациента, зарегистрировать и провести триаж</button>
+  <small>Расширение автоматически нажмёт кнопки регистрации пациента и «Распределить пациента».</small>
+</section>
 <div class="controls"><label>Пол<select id="sex"><option value="random">Случайный</option><option value="male">Мужской</option><option value="female">Женский</option></select></label><label>Полных лет<input id="age" type="number" min="14" max="100" placeholder="Случайно: 18–80"></label></div>
 <button id="generate" class="primary">Сгенерировать пациента</button>
+<details class="login-settings">
+  <summary>Автовход через Keycloak</summary>
+  <label>Логин<input id="keycloakUsername" type="text" autocomplete="username"></label>
+  <label>Пароль<input id="keycloakPassword" type="password" autocomplete="current-password"></label>
+  <label>Профиль<select id="keycloakProfile">
+    <option value="C8 Кардиол.отд(ОИМ) - Врач-кардиолог">C8 Кардиол.отд(ОИМ) - Врач-кардиолог</option>
+    <option value="C8 Кардиол.отд(ОИМ) - Медицинская сестра палатная (постовая)">C8 Кардиол.отд(ОИМ) - Медицинская сестра палатная (постовая)</option>
+    <option value="C8 ОРИТ№1 - Медицинская сестра палатная (постовая)">C8 ОРИТ№1 - Медицинская сестра палатная (постовая)</option>
+    <option value="C8 Хирург.отд№2 - Медицинская сестра палатная (постовая)">C8 Хирург.отд№2 - Медицинская сестра палатная (постовая)</option>
+    <option value="Гематологическое отделение - Медицинский регистратор">Гематологическое отделение - Медицинский регистратор</option>
+    <option value="ПЦК АФО 1 - Медицинская сестра палатная (постовая)">ПЦК АФО 1 - Медицинская сестра палатная (постовая)</option>
+    <option value="С8 Общий медицинский персонал - Администратор">С8 Общий медицинский персонал - Администратор</option>
+    <option value="С8 ПО - Старшая медицинская сестра" selected>С8 ПО - Старшая медицинская сестра</option>
+    <option value="С8 ЦНС - Старшая медицинская сестра">С8 ЦНС - Старшая медицинская сестра</option>
+  </select></label>
+  <label><input id="keycloakAutoLogin" type="checkbox"> Автоматически входить в M99 DEV</label>
+  <label><input id="keycloakRememberPassword" type="checkbox"> Сохранить пароль на этом компьютере</label>
+  <small class="security-warning">Сохранённый пароль находится в chrome.storage.local и не защищён системным хранилищем паролей.</small>
+  <div class="login-actions"><button id="saveKeycloak" type="button">Сохранить</button><button id="clearKeycloak" type="button">Удалить данные входа</button></div>
+</details>
 <section class="samotek-panel" aria-labelledby="samotekTitle">
   <h2 id="samotekTitle">M99 DEV · Самотёк</h2>
   <p>Рабочий профиль: <strong>Тимофеева Е.А. · 1 С8 ПО · Старшая медицинская сестра</strong></p>

@@ -1,10 +1,121 @@
 'use strict';
 
-importScripts('registration.js', 'autofill.js', 'triage.js');
+importScripts('registration.js', 'autofill.js', 'triage.js', 'keycloak.js', 'workflow.js');
 
 let running = false;
 const samotekRunning = new Set();
 const triageRunning = new Set();
+const completeWorkflowRunning = new Set();
+
+const workflowDelay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+function resolvedAutofillFields(result) {
+  const resolved = new Set(result?.filled || []);
+  for (const value of result?.skipped || []) {
+    const match = value.match(/^([^:]+): (?:уже заполнено|уже выбран)$/);
+    if (match) resolved.add(match[1]);
+  }
+  return resolved;
+}
+
+async function processCompleteWorkflowJob(tabId) {
+  if (completeWorkflowRunning.has(tabId)) return;
+  let {completeWorkflowJob:job} = await chrome.storage.session.get('completeWorkflowJob');
+  if (!job || job.tabId !== tabId || !['waiting','running'].includes(job.state)) return;
+  completeWorkflowRunning.add(tabId);
+  const persist = () => chrome.storage.session.set({completeWorkflowJob:structuredClone(job)});
+  try {
+    job.state='running';await persist();
+    for (let attempt=0;attempt<300;attempt++) {
+      const tab = await chrome.tabs.get(tabId);
+      const url = new URL(tab.url || 'about:blank');
+      if (url.origin === 'https://keycloak.dev.m99.dzm') {
+        job.message='Выполняется вход через Keycloak…';await persist();
+        if (tab.status === 'complete') await processKeycloakTab(tabId);
+        await workflowDelay(1000);continue;
+      }
+      if (url.origin !== 'https://reg.dev.m99.dzm' || tab.status !== 'complete') {
+        job.message='Ожидание загрузки M99 DEV…';await persist();await workflowDelay(1000);continue;
+      }
+
+      if (job.phase === 'registration') {
+        if (!/^\/samotek(?:\/|$)/.test(url.pathname)) {
+          await chrome.tabs.update(tabId,{url:'https://reg.dev.m99.dzm/samotek'});await workflowDelay(1000);continue;
+        }
+        job.message='Заполняется карточка пациента…';await persist();
+        const [{result:report}] = await chrome.scripting.executeScript({
+          target:{tabId},func:fillPatientForm,args:[job.patient,{},true]
+        });
+        const required=['documentType','series','number','issuer','issueDate','lastName','firstName','middleName','birthDate','snils','oms','sex'];
+        const resolved=resolvedAutofillFields(report);
+        const missing=required.filter(key=>!resolved.has(key));
+        if (report?.errors?.length || missing.length) {
+          job.message='Ожидание полного заполнения формы: '+[...(report?.errors||[]),...missing.map(key=>key+': не заполнено')].join('; ');
+          await persist();await workflowDelay(700);continue;
+        }
+        const [{result:submitted}] = await chrome.scripting.executeScript({target:{tabId},func:PatientWorkflow.submitPatientRegistration});
+        job.message=submitted?.message||'Ожидание кнопки регистрации.';await persist();
+        if (submitted?.state === 'submitted') {
+          job.phase='registration-submitted';job.registrationSubmittedAt=Date.now();await persist();
+        }
+        await workflowDelay(1000);continue;
+      }
+
+      if (job.phase === 'registration-submitted') {
+        if (/^\/(?:medreg|triage)(?:\/|$)/.test(url.pathname)) {
+          job.phase='triage';job.message='Пациент зарегистрирован. Открывается список ТРИАЖ…';await persist();continue;
+        }
+        const [{result}] = await chrome.scripting.executeScript({target:{tabId},func:PatientWorkflow.inspectSubmission,args:['registration']});
+        if (result?.state === 'error') throw new Error('Регистрация не выполнена: '+result.message);
+        if (result?.state === 'transitioned') {
+          job.phase='triage';job.message=result.message;await persist();await workflowDelay(1000);continue;
+        }
+        if (result?.state === 'success') {
+          job.phase='triage';job.message='Пациент зарегистрирован. Открывается список ТРИАЖ…';await persist();
+          await chrome.tabs.update(tabId,{url:'https://reg.dev.m99.dzm/medreg'});await workflowDelay(1000);continue;
+        }
+        if (Date.now()-job.registrationSubmittedAt>120000) throw new Error('Система не подтвердила регистрацию пациента в течение двух минут.');
+        job.message=result?.message||'Ожидание регистрации пациента…';await persist();await workflowDelay(1000);continue;
+      }
+
+      if (job.phase === 'triage') {
+        if (!/^\/(?:medreg|triage)(?:\/|$)/.test(url.pathname)) {
+          await chrome.tabs.update(tabId,{url:'https://reg.dev.m99.dzm/medreg'});await workflowDelay(1000);continue;
+        }
+        let result;
+        try {
+          [{result}] = await chrome.scripting.executeScript({
+            target:{tabId},func:PatientTriage.advanceTriage,args:[job.patient,job.values,{submit:true}]
+          });
+        } catch (error) {
+          if (String(error.message).includes('другого пациента')) throw error;
+          job.message='Ожидание формы триажа: '+error.message;await persist();await workflowDelay(1000);continue;
+        }
+        job.message=result?.message||'Ищу пациента в списке ТРИАЖ…';await persist();
+        if (result?.state === 'submitted') {
+          job.phase='triage-submitted';job.triageSubmittedAt=Date.now();await persist();
+        }
+        await workflowDelay(1000);continue;
+      }
+
+      if (job.phase === 'triage-submitted') {
+        if (/^\/medreg(?:\/|$)/.test(url.pathname)) {
+          job.state='done';job.message='Пациент зарегистрирован и распределён после триажного осмотра.';job.finishedAt=Date.now();await persist();return;
+        }
+        const [{result}] = await chrome.scripting.executeScript({target:{tabId},func:PatientWorkflow.inspectSubmission,args:['triage']});
+        if (result?.state === 'error') throw new Error('Триаж не завершён: '+result.message);
+        if (result?.state === 'success') {
+          job.state='done';job.message='Пациент зарегистрирован и распределён после триажного осмотра.';job.finishedAt=Date.now();await persist();return;
+        }
+        if (Date.now()-job.triageSubmittedAt>120000) throw new Error('Система не подтвердила распределение пациента в течение двух минут.');
+        job.message=result?.message||'Ожидание завершения триажа…';await persist();await workflowDelay(1000);continue;
+      }
+    }
+    throw new Error('Полный сценарий не завершился в течение пяти минут.');
+  } catch (error) {
+    job.state='error';job.message=error.message;job.finishedAt=Date.now();await persist();
+  } finally {completeWorkflowRunning.delete(tabId);}
+}
 
 async function processSamotekJob(tabId) {
   if (samotekRunning.has(tabId)) return;
@@ -45,7 +156,43 @@ async function processSamotekJob(tabId) {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === 'complete' || changeInfo.url) processSamotekJob(tabId).catch(() => {});
   if (changeInfo.status === 'complete' || changeInfo.url) processTriageJob(tabId).catch(() => {});
+  if (changeInfo.status === 'complete' || changeInfo.url) processKeycloakTab(tabId).catch(() => {});
+  if (changeInfo.status === 'complete' || changeInfo.url) processCompleteWorkflowJob(tabId).catch(() => {});
 });
+
+async function keycloakCredentials() {
+  const [local,session]=await Promise.all([
+    chrome.storage.local.get('keycloakSettings'),chrome.storage.session.get('keycloakSessionPassword')
+  ]);
+  const settings=local.keycloakSettings;
+  if (!settings?.autoLogin) return null;
+  return {...settings,password:settings.password||session.keycloakSessionPassword};
+}
+
+async function processKeycloakTab(tabId) {
+  let tab;try{tab=await chrome.tabs.get(tabId);}catch{return;}
+  if (tab.status!=='complete'||!tab.url?.startsWith('https://keycloak.dev.m99.dzm/')) return;
+  const settings=await keycloakCredentials();
+  if(!settings?.password){
+    await chrome.storage.session.set({keycloakAuthStatus:{state:'credentials-missing',message:'Автовход включён, но пароль отсутствует.'}});return;
+  }
+  const attemptKey='keycloakLoginAttempt:'+tabId;
+  const previous=(await chrome.storage.session.get(attemptKey))[attemptKey];
+  if(previous?.url===tab.url)return;
+  await chrome.storage.session.set({[attemptKey]:{url:tab.url,at:Date.now()}});
+  try {
+    const [{result}]=await chrome.scripting.executeScript({target:{tabId},func:KeycloakAutomation.keycloakAutoLogin,args:[settings]});
+    const messages={
+      'login-submitted':'Логин и пароль переданы в Keycloak.',
+      'profile-selected':'Рабочий профиль выбран.',
+      'credentials-missing':'Не заполнены логин или пароль.',
+      'no-login-form':'Страница Keycloak открыта, но форма входа не распознана.'
+    };
+    await chrome.storage.session.set({keycloakAuthStatus:{state:result?.state||'unknown',message:messages[result?.state]||'Неизвестный ответ Keycloak.'}});
+  } catch(error){
+    await chrome.storage.session.set({keycloakAuthStatus:{state:'error',message:error.message}});throw error;
+  }
+}
 
 async function processTriageJob(tabId) {
   if (triageRunning.has(tabId)) return;
@@ -133,6 +280,26 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
         state:'waiting',startedAt:Date.now(),message:'Ожидание списка ТРИАЖ…'};
       await chrome.storage.session.set({triageJob:job});processTriageJob(tab.id).catch(()=>{});reply({tabId:tab.id});
     },error=>reply({error:error.message}));
+    return true;
+  }
+  if (message.type === 'run-complete-workflow') {
+    chrome.storage.session.get('completeWorkflowJob').then(async ({completeWorkflowJob}) => {
+      if (completeWorkflowJob && ['waiting','running'].includes(completeWorkflowJob.state)) {
+        reply({error:'Полный сценарий уже выполняется.'});return;
+      }
+      const tab=await chrome.tabs.create({url:'https://reg.dev.m99.dzm/samotek'});
+      const job={tabId:tab.id,patient:message.patient,values:PatientTriage.createTriageValues(message.patient),
+        phase:'registration',state:'waiting',startedAt:Date.now(),message:'Открывается регистрация пациента…'};
+      await chrome.storage.session.set({completeWorkflowJob:job,currentPatient:message.patient});
+      processCompleteWorkflowJob(tab.id).catch(()=>{});reply({tabId:tab.id});
+    },error=>reply({error:error.message})).catch(error=>reply({error:error.message}));
+    return true;
+  }
+  if (message.type === 'keycloak-settings-updated') {
+    chrome.tabs.query({url:'https://keycloak.dev.m99.dzm/*'}).then(async tabs=>{
+      await chrome.storage.session.remove(tabs.map(tab=>'keycloakLoginAttempt:'+tab.id));
+      await Promise.all(tabs.map(tab=>processKeycloakTab(tab.id).catch(()=>{})));reply({});
+    });
     return true;
   }
   if (message.type !== 'hospitalize') return;

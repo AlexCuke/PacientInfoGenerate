@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Облтех — тестовый пациент",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "minimum_chrome_version": "112",
   "description": "Генерация тестовых пациентов и регистрация стационарного случая.",
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
   "background": {"service_worker": "registration-worker.js"},
   "host_permissions": [
     "https://reg.dev.m99.dzm/*",
+    "https://keycloak.dev.m99.dzm/*",
     "http://registration.dev.m99.dzm/*",
     "http://registration.test.m99.dzm/*",
     "http://registration-tpak.m15.dzm/*"

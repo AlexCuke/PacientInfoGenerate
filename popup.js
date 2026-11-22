@@ -31,10 +31,42 @@ function generate() {
     patient = api.generate({sex:$('sex').value,age:$('age').value === '' ? undefined : Number($('age').value)});
     render();status('');
     chrome.storage.session.set({currentPatient:patient}).catch(() => {});
+    return patient;
   } catch (error) {status(error.message);}
+  return null;
 }
 $('generate').addEventListener('click',generate);
+$('runCompleteWorkflow').addEventListener('click', async () => {
+  const button = $('runCompleteWorkflow');
+  try {
+    button.disabled = true;
+    const generated = generate();
+    if (!generated) throw new Error('Не удалось сгенерировать пациента.');
+    const response = await chrome.runtime.sendMessage({type:'run-complete-workflow',patient:generated});
+    if (response?.error) throw new Error(response.error);
+    status('Полный сценарий запущен: открываю регистрацию, затем зарегистрирую пациента и проведу триаж.');
+  } catch (error) {status('Не удалось запустить полный сценарий: ' + error.message);}
+  finally {button.disabled = false;}
+});
 $('copyAll').addEventListener('click',() => copy(api.text(patient)));
+$('saveKeycloak').addEventListener('click',async()=>{
+  try {
+    const username=$('keycloakUsername').value.trim(),password=$('keycloakPassword').value;
+    const autoLogin=$('keycloakAutoLogin').checked,rememberPassword=$('keycloakRememberPassword').checked;
+    if (!username || !password) throw new Error('Введите логин и пароль.');
+    const settings={username,autoLogin,rememberPassword,profile:$('keycloakProfile').value};
+    await chrome.storage.local.set({keycloakSettings:{...settings,...rememberPassword?{password}:{}}});
+    await chrome.storage.session.set({keycloakSessionPassword:rememberPassword?null:password});
+    await chrome.runtime.sendMessage({type:'keycloak-settings-updated'});
+    status('Настройки Keycloak сохранены.' + (rememberPassword?' Пароль сохранён локально на этом компьютере.':' Пароль сохранён только до закрытия браузера.'));
+  } catch(error){status('Не удалось сохранить вход: '+error.message);}
+});
+$('clearKeycloak').addEventListener('click',async()=>{
+  await Promise.all([chrome.storage.local.remove('keycloakSettings'),chrome.storage.session.remove('keycloakSessionPassword')]);
+  $('keycloakUsername').value='';$('keycloakPassword').value='';$('keycloakProfile').value='С8 ПО - Старшая медицинская сестра';
+  $('keycloakAutoLogin').checked=false;$('keycloakRememberPassword').checked=false;
+  status('Данные входа удалены.');
+});
 $('openAndAutofillSamotek').addEventListener('click', async () => {
   const button = $('openAndAutofillSamotek');
   try {
@@ -83,7 +115,17 @@ $('autofillSamotek').addEventListener('click', async () => {
 });
 async function init() {
   try {
-    const session = await chrome.storage.session.get(['currentPatient','samotekAutofillJob','triageJob']);
+    const [session,local] = await Promise.all([
+      chrome.storage.session.get(['currentPatient','samotekAutofillJob','triageJob','completeWorkflowJob','keycloakSessionPassword','keycloakAuthStatus']),
+      chrome.storage.local.get('keycloakSettings')
+    ]);
+    const login=local.keycloakSettings||{};
+    $('keycloakUsername').value=login.username||'';$('keycloakPassword').value=login.password||session.keycloakSessionPassword||'';
+    $('keycloakProfile').value=login.profile||'С8 ПО - Старшая медицинская сестра';
+    $('keycloakAutoLogin').checked=Boolean(login.autoLogin);$('keycloakRememberPassword').checked=Boolean(login.rememberPassword);
+    if (session.keycloakAuthStatus?.state === 'error' || session.keycloakAuthStatus?.state === 'no-login-form') {
+      status('Keycloak: ' + session.keycloakAuthStatus.message);
+    }
     if (session.currentPatient) {
       patient = session.currentPatient;
       render();
@@ -96,6 +138,10 @@ async function init() {
     if (triage?.state === 'done') status('Триажный осмотр заполнен. Проверьте значения перед распределением пациента.');
     else if (triage?.state === 'error') status('Не удалось заполнить триаж: ' + triage.message);
     else if (triage?.state === 'waiting') status(triage.message || 'Выполняется поиск пациента в списке ТРИАЖ.');
+    const workflowJob = session.completeWorkflowJob;
+    if (workflowJob?.state === 'done') status('Полный сценарий завершён: пациент зарегистрирован и распределён после триажного осмотра.');
+    else if (workflowJob?.state === 'error') status('Полный сценарий остановлен: ' + workflowJob.message);
+    else if (workflowJob?.state === 'waiting' || workflowJob?.state === 'running') status(workflowJob.message || 'Выполняется полный сценарий.');
   } catch (error) {status('Настройки недоступны: ' + error.message);}
   if (!patient) generate();
 }

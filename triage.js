@@ -17,7 +17,8 @@
   }
 
   // Самодостаточная функция для chrome.scripting.executeScript.
-  async function advanceTriage(patient, values) {
+  async function advanceTriage(patient, values, options) {
+    options = options || {};
     const normalize = value => String(value || '').toLowerCase().replace(/ё/g,'е').replace(/[^\p{L}\p{N}]/gu,'');
     const visible = el => el?.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
     const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -90,6 +91,20 @@
     choose('Наличие аллергии',values.allergy);choose('Признаки алкогольного',values.intoxication);
     choose('Способ транспортировки',values.transport);
     await chooseCombobox('doctorSpecialty');await chooseCombobox('patientCondition');
+    if (options.submit) {
+      const expected = normalize('Распределить пациента');
+      const submit = Array.from(document.querySelectorAll('button')).filter(visible)
+        .find(button => normalize(button.textContent) === expected);
+      if (!submit) return {state:'waiting', message:'Ожидание кнопки «Распределить пациента».', values};
+      if (submit.disabled || submit.getAttribute('data-lu-disabled') === 'true') {
+        return {state:'waiting', message:'Форма заполнена, но кнопка «Распределить пациента» пока недоступна.', values};
+      }
+      if (submit.dataset.patientGeneratorSubmitted !== 'true') {
+        submit.dataset.patientGeneratorSubmitted = 'true';
+        submit.click();
+      }
+      return {state:'submitted', message:'Триаж отправлен, ожидается подтверждение распределения пациента.', values};
+    }
     return {state:'filled', message:'Триажный осмотр заполнен. Проверьте значения перед распределением пациента.', values};
   }
 
