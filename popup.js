@@ -2,7 +2,15 @@
 const api = PatientGenerator;
 const $ = id => document.getElementById(id);
 let patient;
-const SAMOTEK_URL = 'https://reg.dev.m99.dzm/samotek';
+const environmentSelect = $('browserEnvironment');
+for (const environment of Object.keys(BrowserEnvironments.origins)) {
+  environmentSelect.add(new Option(environment, environment));
+}
+environmentSelect.addEventListener('change', async () => {
+  try {
+    await chrome.storage.local.set({browserEnvironment:environmentSelect.value});
+  } catch (error) {status('Не удалось сохранить выбранный контур: ' + error.message);}
+});
 function status(message) { $('status').textContent = message; }
 function autofillReport(result) {
   const parts = ['Заполнено: ' + result.filled.length + '.'];
@@ -42,7 +50,9 @@ $('runCompleteWorkflow').addEventListener('click', async () => {
     button.disabled = true;
     const generated = generate();
     if (!generated) throw new Error('Не удалось сгенерировать пациента.');
-    const response = await chrome.runtime.sendMessage({type:'run-complete-workflow',patient:generated});
+    const response = await chrome.runtime.sendMessage({
+      type:'run-complete-workflow',patient:generated,environment:environmentSelect.value
+    });
     if (response?.error) throw new Error(response.error);
     status('Полный сценарий запущен: открываю регистрацию, затем зарегистрирую пациента и проведу триаж.');
   } catch (error) {status('Не удалось запустить полный сценарий: ' + error.message);}
@@ -72,7 +82,7 @@ $('openAndAutofillSamotek').addEventListener('click', async () => {
   try {
     button.disabled = true;
     const response = await chrome.runtime.sendMessage({
-      type:'open-and-autofill-samotek', patient, replace:$('replaceSamotek').checked
+      type:'open-and-autofill-samotek', patient, replace:$('replaceSamotek').checked, environment:environmentSelect.value
     });
     if (response?.error) throw new Error(response.error);
     status('Самотёк открыт. Автозаполнение начнётся после загрузки формы. Если открылся Keycloak, завершите вход — ожидание продолжится в фоне.');
@@ -81,15 +91,16 @@ $('openAndAutofillSamotek').addEventListener('click', async () => {
 });
 $('openSamotek').addEventListener('click', async () => {
   try {
-    await chrome.tabs.create({url:SAMOTEK_URL});
-    status('Самотёк открыт. Войдите через Keycloak и выберите профиль Тимофеева Е.А. · 1 С8 ПО · Старшая медицинская сестра. Для ручного заполнения используйте кнопки ⧉ в карточке.');
+    const origin = BrowserEnvironments.originFor(environmentSelect.value);
+    await chrome.tabs.create({url:origin + '/samotek'});
+    status('Самотёк открыт. Для ручного заполнения используйте кнопки ⧉ в карточке.');
   } catch (error) {status('Не удалось открыть Самотёк: ' + error.message);}
 });
 $('generateTriage').addEventListener('click', async () => {
   const button = $('generateTriage');
   try {
     button.disabled = true;
-    const response = await chrome.runtime.sendMessage({type:'generate-triage',patient});
+    const response = await chrome.runtime.sendMessage({type:'generate-triage',patient,environment:environmentSelect.value});
     if (response?.error) throw new Error(response.error);
     status('Открыт список ТРИАЖ. Ищу пациента по ФИО и ОМС, затем заполню осмотр случайными значениями.');
   } catch (error) {status('Не удалось запустить триаж: ' + error.message);}
@@ -99,13 +110,14 @@ $('autofillSamotek').addEventListener('click', async () => {
   const button = $('autofillSamotek');
   try {
     button.disabled = true;
+    const origin = BrowserEnvironments.originFor(environmentSelect.value);
     const [tab] = await chrome.tabs.query({active:true,currentWindow:true});
-    if (!tab?.id || !tab.url?.startsWith('https://reg.dev.m99.dzm/samotek')) {
-      throw new Error('Откройте вкладку https://reg.dev.m99.dzm/samotek и форму пациента.');
+    if (!tab?.id || !BrowserEnvironments.isSamotek(tab.url, origin)) {
+      throw new Error('Откройте вкладку ' + origin + '/samotek и форму пациента.');
     }
     const [{result}] = await chrome.scripting.executeScript({
       target:{tabId:tab.id}, func:fillPatientForm,
-      args:[patient, {}, $('replaceSamotek').checked]
+      args:[patient, {}, $('replaceSamotek').checked, origin]
     });
     if (!result) throw new Error('Страница не вернула результат заполнения.');
     status(autofillReport(result));
@@ -117,8 +129,11 @@ async function init() {
   try {
     const [session,local] = await Promise.all([
       chrome.storage.session.get(['currentPatient','samotekAutofillJob','triageJob','completeWorkflowJob','keycloakSessionPassword','keycloakAuthStatus']),
-      chrome.storage.local.get('keycloakSettings')
+      chrome.storage.local.get(['keycloakSettings','browserEnvironment'])
     ]);
+    if (Object.hasOwn(BrowserEnvironments.origins, local.browserEnvironment)) {
+      environmentSelect.value = local.browserEnvironment;
+    }
     const login=local.keycloakSettings||{};
     $('keycloakUsername').value=login.username||'';$('keycloakPassword').value=login.password||session.keycloakSessionPassword||'';
     $('keycloakProfile').value=login.profile||'С8 ПО - Старшая медицинская сестра';

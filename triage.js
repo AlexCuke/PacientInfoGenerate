@@ -17,7 +17,8 @@
   }
 
   // Самодостаточная функция для chrome.scripting.executeScript.
-  async function advanceTriage(patient, values, options) {
+  async function advanceTriage(patient, values, options, origin = 'https://reg.dev.m99.dzm') {
+    if (location.origin !== origin) throw new Error('Недопустимый адрес страницы триажа.');
     options = options || {};
     const normalize = value => String(value || '').toLowerCase().replace(/ё/g,'е').replace(/[^\p{L}\p{N}]/gu,'');
     const visible = el => el?.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';

@@ -6,11 +6,11 @@
   }
 
   // Самодостаточная функция для chrome.scripting.executeScript.
-  function submitPatientRegistration() {
+  function submitPatientRegistration(origin = 'https://reg.dev.m99.dzm') {
     const normalize = value => String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]/gu, '');
     const visible = element => element?.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
-    if (location.origin !== 'https://reg.dev.m99.dzm' || !/^\/samotek(?:\/|$)/.test(location.pathname)) {
-      throw new Error('Регистрация разрешена только на странице M99 DEV «Самотёк».');
+    if (location.origin !== origin || !/^\/samotek(?:\/|$)/.test(location.pathname)) {
+      throw new Error('Регистрация разрешена только на странице «Самотёк» выбранного контура.');
     }
     const expected = normalize('Зарегистрировать и распечатать браслет');
     const buttons = Array.from(document.querySelectorAll('button')).filter(visible);
@@ -29,10 +29,10 @@
 
   // Проверяет результат и при наличии использует штатную кнопку перехода к триажу.
   // Самодостаточная функция для chrome.scripting.executeScript.
-  function inspectSubmission(kind) {
+  function inspectSubmission(kind, origin = 'https://reg.dev.m99.dzm') {
     const normalize = value => String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/[^\p{L}\p{N}]/gu, '');
     const visible = element => element?.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
-    if (location.origin !== 'https://reg.dev.m99.dzm') throw new Error('Недопустимый адрес страницы результата.');
+    if (location.origin !== origin) throw new Error('Недопустимый адрес страницы результата.');
     if (kind === 'registration') {
       const expected = normalize('Перейти к Триажу');
       const button = Array.from(document.querySelectorAll('button')).filter(visible)

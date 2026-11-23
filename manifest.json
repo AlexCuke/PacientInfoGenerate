@@ -8,6 +8,7 @@
   "background": {"service_worker": "registration-worker.js"},
   "host_permissions": [
     "https://reg.dev.m99.dzm/*",
+    "http://reg.test.m99.dzm/*",
     "https://keycloak.dev.m99.dzm/*",
     "http://registration.dev.m99.dzm/*",
     "http://registration.test.m99.dzm/*",

@@ -1,6 +1,6 @@
 'use strict';
 
-importScripts('registration.js', 'autofill.js', 'triage.js', 'keycloak.js', 'workflow.js');
+importScripts('registration.js', 'autofill.js', 'triage.js', 'keycloak.js', 'workflow.js', 'browser-environments.js');
 
 let running = false;
 const samotekRunning = new Set();
@@ -25,6 +25,7 @@ async function processCompleteWorkflowJob(tabId) {
   completeWorkflowRunning.add(tabId);
   const persist = () => chrome.storage.session.set({completeWorkflowJob:structuredClone(job)});
   try {
+    const origin = BrowserEnvironments.originFor(job.environment);
     job.state='running';await persist();
     for (let attempt=0;attempt<300;attempt++) {
       const tab = await chrome.tabs.get(tabId);
@@ -34,17 +35,18 @@ async function processCompleteWorkflowJob(tabId) {
         if (tab.status === 'complete') await processKeycloakTab(tabId);
         await workflowDelay(1000);continue;
       }
-      if (url.origin !== 'https://reg.dev.m99.dzm' || tab.status !== 'complete') {
-        job.message='Ожидание загрузки M99 DEV…';await persist();await workflowDelay(1000);continue;
+      if (url.origin !== origin || tab.status !== 'complete') {
+        job.message='Ожидание загрузки ' + (job.environment || 'M99 DEV') + ' или завершения входа…';
+        await persist();await workflowDelay(1000);continue;
       }
 
       if (job.phase === 'registration') {
         if (!/^\/samotek(?:\/|$)/.test(url.pathname)) {
-          await chrome.tabs.update(tabId,{url:'https://reg.dev.m99.dzm/samotek'});await workflowDelay(1000);continue;
+          await chrome.tabs.update(tabId,{url:origin + '/samotek'});await workflowDelay(1000);continue;
         }
         job.message='Заполняется карточка пациента…';await persist();
         const [{result:report}] = await chrome.scripting.executeScript({
-          target:{tabId},func:fillPatientForm,args:[job.patient,{},true]
+          target:{tabId},func:fillPatientForm,args:[job.patient,{},true,origin]
         });
         const required=['documentType','series','number','issuer','issueDate','lastName','firstName','middleName','birthDate','snils','oms','sex'];
         const resolved=resolvedAutofillFields(report);
@@ -53,7 +55,9 @@ async function processCompleteWorkflowJob(tabId) {
           job.message='Ожидание полного заполнения формы: '+[...(report?.errors||[]),...missing.map(key=>key+': не заполнено')].join('; ');
           await persist();await workflowDelay(700);continue;
         }
-        const [{result:submitted}] = await chrome.scripting.executeScript({target:{tabId},func:PatientWorkflow.submitPatientRegistration});
+        const [{result:submitted}] = await chrome.scripting.executeScript({
+          target:{tabId},func:PatientWorkflow.submitPatientRegistration,args:[origin]
+        });
         job.message=submitted?.message||'Ожидание кнопки регистрации.';await persist();
         if (submitted?.state === 'submitted') {
           job.phase='registration-submitted';job.registrationSubmittedAt=Date.now();await persist();
@@ -65,14 +69,14 @@ async function processCompleteWorkflowJob(tabId) {
         if (/^\/(?:medreg|triage)(?:\/|$)/.test(url.pathname)) {
           job.phase='triage';job.message='Пациент зарегистрирован. Открывается список ТРИАЖ…';await persist();continue;
         }
-        const [{result}] = await chrome.scripting.executeScript({target:{tabId},func:PatientWorkflow.inspectSubmission,args:['registration']});
+        const [{result}] = await chrome.scripting.executeScript({target:{tabId},func:PatientWorkflow.inspectSubmission,args:['registration',origin]});
         if (result?.state === 'error') throw new Error('Регистрация не выполнена: '+result.message);
         if (result?.state === 'transitioned') {
           job.phase='triage';job.message=result.message;await persist();await workflowDelay(1000);continue;
         }
         if (result?.state === 'success') {
           job.phase='triage';job.message='Пациент зарегистрирован. Открывается список ТРИАЖ…';await persist();
-          await chrome.tabs.update(tabId,{url:'https://reg.dev.m99.dzm/medreg'});await workflowDelay(1000);continue;
+          await chrome.tabs.update(tabId,{url:origin + '/medreg'});await workflowDelay(1000);continue;
         }
         if (Date.now()-job.registrationSubmittedAt>120000) throw new Error('Система не подтвердила регистрацию пациента в течение двух минут.');
         job.message=result?.message||'Ожидание регистрации пациента…';await persist();await workflowDelay(1000);continue;
@@ -80,12 +84,12 @@ async function processCompleteWorkflowJob(tabId) {
 
       if (job.phase === 'triage') {
         if (!/^\/(?:medreg|triage)(?:\/|$)/.test(url.pathname)) {
-          await chrome.tabs.update(tabId,{url:'https://reg.dev.m99.dzm/medreg'});await workflowDelay(1000);continue;
+          await chrome.tabs.update(tabId,{url:origin + '/medreg'});await workflowDelay(1000);continue;
         }
         let result;
         try {
           [{result}] = await chrome.scripting.executeScript({
-            target:{tabId},func:PatientTriage.advanceTriage,args:[job.patient,job.values,{submit:true}]
+            target:{tabId},func:PatientTriage.advanceTriage,args:[job.patient,job.values,{submit:true},origin]
           });
         } catch (error) {
           if (String(error.message).includes('другого пациента')) throw error;
@@ -102,7 +106,7 @@ async function processCompleteWorkflowJob(tabId) {
         if (/^\/medreg(?:\/|$)/.test(url.pathname)) {
           job.state='done';job.message='Пациент зарегистрирован и распределён после триажного осмотра.';job.finishedAt=Date.now();await persist();return;
         }
-        const [{result}] = await chrome.scripting.executeScript({target:{tabId},func:PatientWorkflow.inspectSubmission,args:['triage']});
+        const [{result}] = await chrome.scripting.executeScript({target:{tabId},func:PatientWorkflow.inspectSubmission,args:['triage',origin]});
         if (result?.state === 'error') throw new Error('Триаж не завершён: '+result.message);
         if (result?.state === 'success') {
           job.state='done';job.message='Пациент зарегистрирован и распределён после триажного осмотра.';job.finishedAt=Date.now();await persist();return;
@@ -123,13 +127,14 @@ async function processSamotekJob(tabId) {
   if (!job || job.tabId !== tabId || job.state !== 'waiting') return;
   let tab;
   try {tab = await chrome.tabs.get(tabId);} catch {return;}
-  if (!tab.url?.startsWith('https://reg.dev.m99.dzm/samotek')) return;
+  const origin = BrowserEnvironments.originFor(job.environment);
+  if (!BrowserEnvironments.isSamotek(tab.url, origin)) return;
   if (tab.status !== 'complete') return;
   samotekRunning.add(tabId);
   try {
     for (let attempt = 0; attempt < 20; attempt++) {
       const [{result}] = await chrome.scripting.executeScript({
-        target:{tabId}, func:fillPatientForm, args:[job.patient, {}, job.replace]
+        target:{tabId}, func:fillPatientForm, args:[job.patient, {}, job.replace, origin]
       });
       const resolved = new Set(result?.filled || []);
       for (const value of result?.skipped || []) {
@@ -199,14 +204,15 @@ async function processTriageJob(tabId) {
   const {triageJob:job} = await chrome.storage.session.get('triageJob');
   if (!job || job.tabId !== tabId || job.state !== 'waiting') return;
   let tab;try {tab = await chrome.tabs.get(tabId);} catch {return;}
-  if (!tab.url?.startsWith('https://reg.dev.m99.dzm/')) return;
+  const origin = BrowserEnvironments.originFor(job.environment);
+  if (new URL(tab.url || 'about:blank').origin !== origin) return;
   if (tab.status !== 'complete') return;
   triageRunning.add(tabId);
   try {
     for (let attempt=0;attempt<120;attempt++) {
       try {
         const [{result}] = await chrome.scripting.executeScript({
-          target:{tabId},func:PatientTriage.advanceTriage,args:[job.patient,job.values]
+          target:{tabId},func:PatientTriage.advanceTriage,args:[job.patient,job.values,null,origin]
         });
         job.message = result?.message || 'Ожидание интерфейса триажа…';
         await chrome.storage.session.set({triageJob:job});
@@ -264,22 +270,22 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
     return;
   }
   if (message.type === 'open-and-autofill-samotek') {
-    chrome.tabs.create({url:'https://reg.dev.m99.dzm/samotek'}).then(async tab => {
+    Promise.resolve().then(() => chrome.tabs.create({url:BrowserEnvironments.originFor(message.environment) + '/samotek'})).then(async tab => {
       await chrome.storage.session.set({samotekAutofillJob:{
-        tabId:tab.id, patient:message.patient, replace:Boolean(message.replace),
+        tabId:tab.id, patient:message.patient, replace:Boolean(message.replace), environment:message.environment,
         state:'waiting', startedAt:Date.now(), message:'Ожидание формы…'
       }});
       processSamotekJob(tab.id).catch(() => {});
       reply({tabId:tab.id});
-    }, error => reply({error:error.message}));
+    }).catch(error => reply({error:error.message}));
     return true;
   }
   if (message.type === 'generate-triage') {
-    chrome.tabs.create({url:'https://reg.dev.m99.dzm/medreg'}).then(async tab => {
-      const job={tabId:tab.id,patient:message.patient,values:PatientTriage.createTriageValues(message.patient),
+    Promise.resolve().then(() => chrome.tabs.create({url:BrowserEnvironments.originFor(message.environment) + '/medreg'})).then(async tab => {
+      const job={tabId:tab.id,patient:message.patient,values:PatientTriage.createTriageValues(message.patient),environment:message.environment,
         state:'waiting',startedAt:Date.now(),message:'Ожидание списка ТРИАЖ…'};
       await chrome.storage.session.set({triageJob:job});processTriageJob(tab.id).catch(()=>{});reply({tabId:tab.id});
-    },error=>reply({error:error.message}));
+    }).catch(error=>reply({error:error.message}));
     return true;
   }
   if (message.type === 'run-complete-workflow') {
@@ -287,8 +293,8 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if (completeWorkflowJob && ['waiting','running'].includes(completeWorkflowJob.state)) {
         reply({error:'Полный сценарий уже выполняется.'});return;
       }
-      const tab=await chrome.tabs.create({url:'https://reg.dev.m99.dzm/samotek'});
-      const job={tabId:tab.id,patient:message.patient,values:PatientTriage.createTriageValues(message.patient),
+      const tab=await chrome.tabs.create({url:BrowserEnvironments.originFor(message.environment) + '/samotek'});
+      const job={tabId:tab.id,patient:message.patient,values:PatientTriage.createTriageValues(message.patient),environment:message.environment,
         phase:'registration',state:'waiting',startedAt:Date.now(),message:'Открывается регистрация пациента…'};
       await chrome.storage.session.set({completeWorkflowJob:job,currentPatient:message.patient});
       processCompleteWorkflowJob(tab.id).catch(()=>{});reply({tabId:tab.id});

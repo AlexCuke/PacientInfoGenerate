@@ -2,6 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {generate} = require('../core.js');
 const {caseFields, environments, register} = require('../registration.js');
+const {origins, originFor, isSamotek} = require('../browser-environments.js');
 const manifest = require('../manifest.json');
 
 const environment = 'M99 DEV';
@@ -10,11 +11,23 @@ const details = Object.fromEntries(Object.entries(caseFields).map(([key, [, valu
 test('адреса контуров согласованы с разрешениями расширения', () => {
   const registrationPermissions = manifest.host_permissions.filter(url => url.startsWith('http://registration'));
   assert.deepEqual(Object.values(environments).map(url => url + '/*').sort(), registrationPermissions.sort());
-  assert.ok(manifest.host_permissions.includes('https://reg.dev.m99.dzm/*'));
+  for (const origin of Object.values(origins)) {
+    assert.ok(manifest.host_permissions.includes(origin + '/*'));
+  }
   assert.ok(manifest.host_permissions.includes('https://keycloak.dev.m99.dzm/*'));
   assert.ok(manifest.permissions.includes('activeTab'));
   assert.ok(manifest.permissions.includes('scripting'));
   assert.ok(manifest.permissions.includes('tabs'));
+});
+
+test('Самотёк открывается только на маршруте выбранного контура', () => {
+  const testOrigin = originFor('M99 TEST');
+  assert.equal(testOrigin, 'http://reg.test.m99.dzm');
+  assert.equal(originFor(), 'https://reg.dev.m99.dzm');
+  assert.ok(isSamotek(testOrigin + '/samotek?mode=new', testOrigin));
+  assert.equal(isSamotek(testOrigin + '/samotek-other', testOrigin), false);
+  assert.equal(isSamotek(originFor() + '/samotek', testOrigin), false);
+  assert.throws(() => originFor('constructor'), /Неизвестный контур/);
 });
 
 test('регистрация передаёт состояние процесса между этапами', async t => {

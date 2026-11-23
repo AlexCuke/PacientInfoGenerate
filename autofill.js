@@ -1,10 +1,11 @@
 // Самодостаточная функция: передаётся chrome.scripting.executeScript без внешних замыканий.
-async function fillPatientForm(patient, mapping, replace) {
+async function fillPatientForm(patient, mapping, replace, origin) {
   'use strict';
+  origin ??= 'https://reg.dev.m99.dzm';
   mapping = mapping || {};
   replace = Boolean(replace);
-  if (location.origin !== 'https://reg.dev.m99.dzm' || !/^\/samotek(?:\/|$)/.test(location.pathname)) {
-    throw new Error('Заполнение разрешено только на https://reg.dev.m99.dzm/samotek');
+  if (location.origin !== origin || !/^\/samotek(?:\/|$)/.test(location.pathname)) {
+    throw new Error('Заполнение разрешено только на ' + origin + '/samotek');
   }
   const aliases = {
     documentType:['документ удостоверяющий личность','вид документа','тип документа'],
